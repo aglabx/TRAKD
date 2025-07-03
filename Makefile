@@ -1,69 +1,70 @@
-# Makefile для проекта TRAKD
-# Компилирует все C++ файлы в отдельные исполняемые файлы
+# Makefile for TRAKD project
+# Compiles all C++ files into separate executable files
 
-# Компилятор и флаги
+# Compiler and flags
 CXX = g++
 CXXFLAGS = -std=c++17 -O3 -Wall -Wextra -pthread
 LDFLAGS = -pthread
 
-# Директории
+# Directories
 SRCDIR = src
 BINDIR = bin
 
-# Исходные файлы
+# Source files
 SOURCES = $(wildcard $(SRCDIR)/*.cpp)
 
-# Исполняемые файлы (без расширения .cpp и с префиксом директории bin/)
+# Executable files (without .cpp extension and with bin/ directory prefix)
 EXECUTABLES = $(patsubst $(SRCDIR)/%.cpp,$(BINDIR)/%,$(SOURCES))
 
-# Цель по умолчанию
+# Default target
 all: $(BINDIR) $(EXECUTABLES)
 
-# Создание директории bin
+# Create bin directory
 $(BINDIR):
 	mkdir -p $(BINDIR)
 
-# Правило для компиляции каждого .cpp файла в исполняемый файл
+# Rule for compiling each .cpp file into an executable
 $(BINDIR)/%: $(SRCDIR)/%.cpp | $(BINDIR)
 	$(CXX) $(CXXFLAGS) $< -o $@ $(LDFLAGS)
 
-# Очистка скомпилированных файлов
+# Clean compiled files
 clean:
 	rm -rf $(BINDIR)
 
-# Пересборка (очистка + сборка)
+# Rebuild (clean + build)
 rebuild: clean all
 
-# Установка зависимостей (если нужно)
+# Install dependencies (if needed)
 install-deps:
-	@echo "Для данного проекта специальные зависимости не требуются"
-	@echo "Убедитесь, что у вас установлен g++ с поддержкой C++17"
+	@echo "No special dependencies required for this project"
+	@echo "Make sure you have g++ installed with C++17 support"
 
-# Запуск тестов (пример)
+# Run tests (example)
 test: all
-	@echo "Запуск базовых тестов..."
-	@echo "Проверка компиляции завершена успешно"
+	@echo "Running basic tests..."
+	@echo "Compilation check completed successfully"
 	@ls -la $(BINDIR)/
 
-# Показать справку
+# Show help
 help:
-	@echo "Доступные цели:"
-	@echo "  all          - Скомпилировать все исполняемые файлы (по умолчанию)"
-	@echo "  clean        - Удалить все скомпилированные файлы"
-	@echo "  rebuild      - Очистить и пересобрать все"
-	@echo "  install-deps - Показать информацию о зависимостях"
-	@echo "  test         - Запустить простую проверку"
-	@echo "  help         - Показать эту справку"
+	@echo "Available targets:"
+	@echo "  all          - Compile all executable files (default)"
+	@echo "  clean        - Remove all compiled files"
+	@echo "  rebuild      - Clean and rebuild everything"
+	@echo "  install-deps - Show dependency information"
+	@echo "  test         - Run simple check"
+	@echo "  help         - Show this help"
 	@echo ""
-	@echo "Исполняемые файлы будут созданы в директории bin/:"
+	@echo "Executable files will be created in the bin/ directory:"
 	@echo "  bin/kmer_analyzer"
 	@echo "  bin/locus_bed_generator" 
 	@echo "  bin/LocusBedGeneratorDetailed"
 	@echo "  bin/distance_analyzer_detailed"
+	@echo "  bin/dispersed_repeat_finder"
 
-# Дополнительные флаги для отладки
+# Additional flags for debugging
 debug: CXXFLAGS += -g -DDEBUG
 debug: all
 
-# Объявление фиктивных целей
+# Declare phony targets
 .PHONY: all clean rebuild install-deps test help debug

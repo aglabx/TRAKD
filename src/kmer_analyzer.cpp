@@ -7,17 +7,17 @@
 #include <cstdint>
 #include <stdexcept>
 #include <thread>
-#include <filesystem> // Для проверки существования файла
-#include <atomic>     // Для безопасного счетчика в потоках
-#include <chrono>     // Для пауз в потоке прогресса
-#include <cstdio>     // для snprintf
+#include <filesystem> // For checking file existence
+#include <atomic>     // For thread-safe counter
+#include <chrono>     // For pauses in progress thread
+#include <cstdio>     // for snprintf
 
-// --- Платформо-зависимые утилиты для памяти ---
+// --- Platform-dependent memory utilities ---
 #if defined(_WIN32)
 #include <windows.h>
 #include <psapi.h>
-// Примечание для компиляции в Windows: необходимо слинковать с Psapi.lib
-// Например, для g++: g++ ... -lpsapi
+// Note for Windows compilation: need to link with Psapi.lib
+// For example, for g++: g++ ... -lpsapi
 #elif defined(__linux__)
 #include <unistd.h>
 #include <ios>
@@ -26,9 +26,9 @@
 #include <mach/mach.h>
 #endif
 
-// --- Утилиты ---
+// --- Utilities ---
 
-// Возвращает текущее использование памяти (RSS) в мегабайтах
+// Returns current memory usage (RSS) in megabytes
 double getMemoryUsage() {
 #if defined(_WIN32)
     PROCESS_MEMORY_COUNTERS_EX pmc;
@@ -40,8 +40,8 @@ double getMemoryUsage() {
     std::ifstream statm("/proc/self/statm");
     if (!statm) return 0.0;
     long long rss_pages;
-    statm.ignore(std::numeric_limits<std::streamsize>::max(), ' '); // Пропускаем VmSize
-    statm >> rss_pages; // Читаем RSS
+    statm.ignore(std::numeric_limits<std::streamsize>::max(), ' '); // Skip VmSize
+    statm >> rss_pages; // Read RSS
     statm.close();
     long page_size_kb = sysconf(_SC_PAGE_SIZE) / 1024;
     return (static_cast<double>(rss_pages) * page_size_kb) / 1024.0;
@@ -53,33 +53,33 @@ double getMemoryUsage() {
     }
     return static_cast<double>(info.resident_size) / (1024 * 1024);
 #else
-    return 0.0; // Неподдерживаемая платформа
+    return 0.0; // Unsupported platform
 #endif
 }
 
-// Вспомогательная функция для форматирования времени в MM:SS
+// Helper function for formatting time in MM:SS
 std::string formatTime(long long seconds) {
     if (seconds < 0) return "--:--";
     long long minutes = seconds / 60;
     seconds %= 60;
-    char buffer[32]; // Увеличен размер буфера для предотвращения переполнения
+    char buffer[32]; // Increased buffer size to prevent overflow
     snprintf(buffer, sizeof(buffer), "%02lld:%02lld", minutes, seconds);
     return buffer;
 }
 
 
-// Функция для отображения прогресс-бара с дополнительной информацией
+// Function to display progress bar with additional information
 void printProgressBar(double percentage, const std::string& message, std::chrono::steady_clock::time_point start_time) {
     percentage = std::max(0.0, std::min(1.0, percentage));
     int val = static_cast<int>(percentage * 100);
-    int lpad = static_cast<int>(percentage * 35); // Уменьшено для доп. информации
+    int lpad = static_cast<int>(percentage * 35); // Reduced for additional info
     int rpad = 35 - lpad;
 
     auto now = std::chrono::steady_clock::now();
     double elapsed_sec = std::chrono::duration_cast<std::chrono::duration<double>>(now - start_time).count();
     
     long long eta_sec = -1;
-    if (percentage > 0.001) { // Избегаем деления на ноль и нереалистичных ETA в начале
+    if (percentage > 0.001) { // Avoid division by zero and unrealistic ETA at start
         eta_sec = static_cast<long long>(elapsed_sec * (1.0 / percentage - 1.0));
     }
 
@@ -102,7 +102,7 @@ void printProgressBar(double percentage, const std::string& message, std::chrono
     }
 }
 
-// --- Функции для работы с K-мерами ---
+// --- Functions for working with K-mers ---
 
 inline int charToBits(char c) {
     switch (c) {
@@ -129,7 +129,7 @@ std::string uint64ToKmer(uint64_t kmer_val, int k) {
     return kmer_str;
 }
 
-// --- Основной класс анализатора ---
+// --- Main analyzer class ---
 
 struct ContigInfo {
     std::string name;
@@ -157,7 +157,7 @@ public:
         if (!cache_loaded) {
             readMultiFasta(input_fasta);
             if(genome.empty()){
-                std::cerr << "Предупреждение: геном пуст или не удалось прочитать файл. Анализ прекращен." << std::endl;
+                std::cerr << "Warning: genome is empty or failed to read file. Analysis stopped." << std::endl;
             } else {
                 buildIndexParallel(num_threads);
                 calculateAllDistances();
@@ -178,15 +178,15 @@ private:
     std::unordered_map<uint64_t, KmerData> kmer_index;
     std::vector<std::pair<uint64_t, uint32_t>> sorted_kmer_freqs;
 
-    // --- Функции для сохранения/загрузки индекса ---
+    // --- Functions for saving/loading index ---
     const uint32_t MAGIC_NUMBER = 0x4B4D5258; // "KMRX"
-    const uint16_t VERSION = 3; // Версия 3 с uint64_t и информацией о контигах
+    const uint16_t VERSION = 3; // Version 3 with uint64_t and contig information
 
     void saveCacheToFile(const std::string& filename) {
         auto start_time = std::chrono::steady_clock::now();
         std::ofstream out(filename, std::ios::binary);
-        if (!out) { std::cerr << "\nПредупреждение: не удалось сохранить файл кэша: " << filename << std::endl; return; }
-        printProgressBar(0.0, "Сохранение кэша", start_time);
+        if (!out) { std::cerr << "\nWarning: failed to save cache file: " << filename << std::endl; return; }
+        printProgressBar(0.0, "Saving cache", start_time);
         
         out.write(reinterpret_cast<const char*>(&MAGIC_NUMBER), sizeof(MAGIC_NUMBER));
         out.write(reinterpret_cast<const char*>(&VERSION), sizeof(VERSION));
@@ -215,9 +215,9 @@ private:
             out.write(reinterpret_cast<const char*>(&dist_size), sizeof(dist_size));
             out.write(reinterpret_cast<const char*>(data.distances.data()), dist_size * sizeof(uint64_t));
             written_count++;
-            if (written_count % 5000 == 0) printProgressBar(static_cast<double>(written_count) / map_size, "Сохранение кэша", start_time);
+            if (written_count % 5000 == 0) printProgressBar(static_cast<double>(written_count) / map_size, "Saving cache", start_time);
         }
-        printProgressBar(1.0, "Сохранение кэша", start_time);
+        printProgressBar(1.0, "Saving cache", start_time);
     }
 
     bool loadCacheFromFile(const std::string& filename) {
@@ -226,12 +226,12 @@ private:
         if (!in) return false;
         
         auto start_time = std::chrono::steady_clock::now();
-        printProgressBar(0.0, "Загрузка кэша", start_time);
+        printProgressBar(0.0, "Loading cache", start_time);
 
         uint32_t magic; uint16_t version;
         in.read(reinterpret_cast<char*>(&magic), sizeof(magic));
         in.read(reinterpret_cast<char*>(&version), sizeof(version));
-        if (!in || magic != MAGIC_NUMBER || version != VERSION) { std::cerr << "\nПредупреждение: версия кэша несовместима." << std::endl; return false; }
+        if (!in || magic != MAGIC_NUMBER || version != VERSION) { std::cerr << "\nWarning: cache version incompatible." << std::endl; return false; }
 
         uint64_t contig_count;
         in.read(reinterpret_cast<char*>(&contig_count), sizeof(contig_count));
@@ -248,7 +248,7 @@ private:
         uint64_t map_size;
         in.read(reinterpret_cast<char*>(&map_size), sizeof(map_size));
         if (!in) return false;
-        if (map_size == 0) { printProgressBar(1.0, "Загрузка кэша", start_time); return true; }
+        if (map_size == 0) { printProgressBar(1.0, "Loading cache", start_time); return true; }
         
         kmer_index.reserve(map_size);
         for (uint64_t i = 0; i < map_size; ++i) {
@@ -264,16 +264,16 @@ private:
             in.read(reinterpret_cast<char*>(data.distances.data()), dist_size * sizeof(uint64_t));
             if (!in) { kmer_index.clear(); return false; }
             kmer_index[kmer_val] = std::move(data);
-            if (i % 5000 == 0) printProgressBar(static_cast<double>(i) / map_size, "Загрузка кэша", start_time);
+            if (i % 5000 == 0) printProgressBar(static_cast<double>(i) / map_size, "Loading cache", start_time);
         }
-        printProgressBar(1.0, "Загрузка кэша", start_time);
+        printProgressBar(1.0, "Loading cache", start_time);
         return true;
     }
 
     void readMultiFasta(const std::string& filename) {
         auto start_time = std::chrono::steady_clock::now();
         std::ifstream file(filename);
-        if (!file) throw std::runtime_error("Невозможно открыть файл генома: " + filename);
+        if (!file) throw std::runtime_error("Cannot open genome file: " + filename);
         
         contig_map.clear();
         genome.clear();
@@ -291,7 +291,7 @@ private:
         };
 
         std::string line;
-        printProgressBar(0.0, "Чтение Multifasta", start_time);
+        printProgressBar(0.0, "Reading Multifasta", start_time);
         while (std::getline(file, line)) {
             if (line.empty()) continue;
             if (line[0] == '>') {
@@ -303,14 +303,14 @@ private:
                 current_seq += line;
             }
         }
-        save_contig(); // Сохранить последний контиг
-        printProgressBar(1.0, "Чтение Multifasta", start_time);
+        save_contig(); // Save last contig
+        printProgressBar(1.0, "Reading Multifasta", start_time);
     }
 
     void buildIndexParallel(unsigned int num_threads) {
         if (genome.length() < static_cast<size_t>(k)) return;
         auto stage_start_time = std::chrono::steady_clock::now();
-        std::string msg = "Индексация (" + std::to_string(num_threads) + " п.)";
+        std::string msg = "Indexing (" + std::to_string(num_threads) + " thr.)";
         std::vector<std::thread> threads;
         std::vector<std::unordered_map<uint64_t, std::vector<uint64_t>>> local_indices(num_threads);
         std::atomic<size_t> processed_bases{0};
@@ -333,26 +333,26 @@ private:
         printProgressBar(1.0, msg, stage_start_time);
         
         auto reduce_start_time = std::chrono::steady_clock::now();
-        printProgressBar(0.0, "Объединение карт", reduce_start_time);
+        printProgressBar(0.0, "Merging maps", reduce_start_time);
         for(size_t i = 0; i < local_indices.size(); ++i) {
             for (const auto& pair : local_indices[i]) {
                 kmer_index[pair.first].positions.insert(kmer_index[pair.first].positions.end(), pair.second.begin(), pair.second.end());
             }
-            printProgressBar(static_cast<double>(i + 1) / local_indices.size(), "Объединение карт", reduce_start_time);
+            printProgressBar(static_cast<double>(i + 1) / local_indices.size(), "Merging maps", reduce_start_time);
         }
         
         auto final_sort_start_time = std::chrono::steady_clock::now();
-        printProgressBar(0.0, "Сортировка позиций", final_sort_start_time);
+        printProgressBar(0.0, "Sorting positions", final_sort_start_time);
         if (!kmer_index.empty()) {
             size_t processed_kmers = 0;
             for(auto& pair : kmer_index) {
                 std::sort(pair.second.positions.begin(), pair.second.positions.end());
                 pair.second.frequency = pair.second.positions.size();
                 processed_kmers++;
-                if (processed_kmers % 2000 == 0) printProgressBar(static_cast<double>(processed_kmers) / kmer_index.size(), "Сортировка позиций", final_sort_start_time);
+                if (processed_kmers % 2000 == 0) printProgressBar(static_cast<double>(processed_kmers) / kmer_index.size(), "Sorting positions", final_sort_start_time);
             }
         }
-        printProgressBar(1.0, "Сортировка позиций", final_sort_start_time);
+        printProgressBar(1.0, "Sorting positions", final_sort_start_time);
     }
 
     void buildIndexChunk(size_t start, size_t end, std::unordered_map<uint64_t, std::vector<uint64_t>>& local_index, std::atomic<size_t>& progress_counter) {
@@ -381,8 +381,8 @@ private:
 
     void calculateAllDistances() {
         auto start_time = std::chrono::steady_clock::now();
-        if (kmer_index.empty()) { printProgressBar(1.0, "Расчет дистанций", start_time); return; }
-        printProgressBar(0.0, "Расчет дистанций", start_time);
+        if (kmer_index.empty()) { printProgressBar(1.0, "Calculating distances", start_time); return; }
+        printProgressBar(0.0, "Calculating distances", start_time);
         size_t processed_count = 0;
         for (auto& pair : kmer_index) {
             auto& data = pair.second;
@@ -393,28 +393,28 @@ private:
                 }
             }
             processed_count++;
-            if (processed_count % 1000 == 0) printProgressBar(static_cast<double>(processed_count) / kmer_index.size(), "Расчет дистанций", start_time);
+            if (processed_count % 1000 == 0) printProgressBar(static_cast<double>(processed_count) / kmer_index.size(), "Calculating distances", start_time);
         }
-        printProgressBar(1.0, "Расчет дистанций", start_time);
+        printProgressBar(1.0, "Calculating distances", start_time);
     }
 
     void sortKmersByFrequency() {
         auto start_time = std::chrono::steady_clock::now();
-        printProgressBar(0.0, "Сортировка k-меров", start_time);
+        printProgressBar(0.0, "Sorting k-mers", start_time);
         for (const auto& pair : kmer_index) sorted_kmer_freqs.push_back({pair.first, pair.second.frequency});
         std::sort(sorted_kmer_freqs.begin(), sorted_kmer_freqs.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
-        printProgressBar(1.0, "Сортировка k-меров", start_time);
+        printProgressBar(1.0, "Sorting k-mers", start_time);
     }
     
     void writeTopKmers(const std::string& filename, int top_n) {
         auto start_time = std::chrono::steady_clock::now();
         std::ofstream out(filename);
-        if (!out) throw std::runtime_error("Невозможно открыть файл для записи: " + filename);
+        if (!out) throw std::runtime_error("Cannot open file for writing: " + filename);
         out << "# Top " << top_n << " most frequent " << k << "-mers\n";
         out << "# Format: KMER\tFREQUENCY\tDISTANCES(pos2-pos1,pos3-pos2,...)\n";
         int count_to_write = std::min(top_n, static_cast<int>(sorted_kmer_freqs.size()));
-        if (count_to_write == 0) { printProgressBar(1.0, "Запись топ-100 (txt)", start_time); return; }
-        printProgressBar(0.0, "Запись топ-100 (txt)", start_time);
+        if (count_to_write == 0) { printProgressBar(1.0, "Writing top-100 (txt)", start_time); return; }
+        printProgressBar(0.0, "Writing top-100 (txt)", start_time);
         for (int i = 0; i < count_to_write; ++i) {
             uint64_t kmer_val = sorted_kmer_freqs[i].first;
             const auto& data = kmer_index.at(kmer_val);
@@ -423,17 +423,17 @@ private:
                 for (size_t j = 0; j < data.distances.size(); ++j) out << data.distances[j] << (j == data.distances.size() - 1 ? "" : ",");
             }
             out << "\n";
-            printProgressBar(static_cast<double>(i+1)/count_to_write, "Запись топ-100 (txt)", start_time);
+            printProgressBar(static_cast<double>(i+1)/count_to_write, "Writing top-100 (txt)", start_time);
         }
-        printProgressBar(1.0, "Запись топ-100 (txt)", start_time);
+        printProgressBar(1.0, "Writing top-100 (txt)", start_time);
     }
 
     void writeFullBinaryOutput(const std::string& filename) {
         auto start_time = std::chrono::steady_clock::now();
         std::ofstream out(filename, std::ios::binary);
-        if (!out) throw std::runtime_error("Невозможно открыть полный бинарный файл для записи: " + filename);
+        if (!out) throw std::runtime_error("Cannot open full binary file for writing: " + filename);
         
-        printProgressBar(0.0, "Запись (bin-full)", start_time);
+        printProgressBar(0.0, "Writing (bin-full)", start_time);
         uint64_t map_size = sorted_kmer_freqs.size();
         out.write(reinterpret_cast<const char*>(&map_size), sizeof(map_size));
         uint64_t written_count = 0;
@@ -449,30 +449,30 @@ private:
             out.write(reinterpret_cast<const char*>(&dist_size), sizeof(dist_size));
             out.write(reinterpret_cast<const char*>(data.distances.data()), dist_size * sizeof(uint64_t));
             written_count++;
-            if (written_count % 2000 == 0) printProgressBar(static_cast<double>(written_count) / map_size, "Запись (bin-full)", start_time);
+            if (written_count % 2000 == 0) printProgressBar(static_cast<double>(written_count) / map_size, "Writing (bin-full)", start_time);
         }
-        printProgressBar(1.0, "Запись (bin-full)", start_time);
+        printProgressBar(1.0, "Writing (bin-full)", start_time);
     }
 
     void writeContigIndex(const std::string& filename) {
         auto start_time = std::chrono::steady_clock::now();
         std::ofstream out(filename);
-        if (!out) { std::cerr << "\nПредупреждение: не удалось записать индекс контигов: " << filename << std::endl; return; }
-        printProgressBar(0.0, "Запись .cidx файла", start_time);
+        if (!out) { std::cerr << "\nWarning: failed to write contig index: " << filename << std::endl; return; }
+        printProgressBar(0.0, "Writing .cidx file", start_time);
         out << "#contig_name\tlength\tglobal_offset\n";
         for(const auto& ci : contig_map) {
             out << ci.name << "\t" << ci.length << "\t" << ci.global_offset << "\n";
         }
-        printProgressBar(1.0, "Запись .cidx файла", start_time);
+        printProgressBar(1.0, "Writing .cidx file", start_time);
     }
 };
 
 int main(int argc, char* argv[]) {
     if (argc < 5 || argc > 7) {
-        std::cerr << "Использование: " << argv[0] << " <in.fasta> <out_top100.txt> <out_full.bin> <out_contigs.cidx> [cache.kidx] [threads]" << std::endl;
-        std::cerr << "  <out_contigs.cidx> - текстовый файл с информацией о контигах." << std::endl;
-        std::cerr << "  [cache.kidx]       - необязательный. Файл кэша для сохранения/загрузки." << std::endl;
-        std::cerr << "  [num_threads]      - необязательный. Количество потоков (по умолч.: все доступные)." << std::endl;
+        std::cerr << "Usage: " << argv[0] << " <in.fasta> <out_top100.txt> <out_full.bin> <out_contigs.cidx> [cache.kidx] [threads]" << std::endl;
+        std::cerr << "  <out_contigs.cidx> - text file with contig information." << std::endl;
+        std::cerr << "  [cache.kidx]       - optional. Cache file for saving/loading." << std::endl;
+        std::cerr << "  [num_threads]      - optional. Number of threads (default: all available)." << std::endl;
         return 1;
     }
 
@@ -487,7 +487,7 @@ int main(int argc, char* argv[]) {
         try {
             num_threads = std::stoul(argv[6]);
             if (num_threads == 0) num_threads = 1;
-        } catch (...) { std::cerr << "Ошибка: неверное значение для num_threads." << std::endl; return 1; }
+        } catch (...) { std::cerr << "Error: invalid value for num_threads." << std::endl; return 1; }
     }
     
     const int K_SIZE = 13;
@@ -495,9 +495,9 @@ int main(int argc, char* argv[]) {
     try {
         KmerAnalyzer analyzer(K_SIZE);
         analyzer.process(input_file, output_text_file, output_binary_file, contig_index_file, cache_file, num_threads);
-        std::cout << "\nАнализ успешно завершен." << std::endl;
+        std::cout << "\nAnalysis completed successfully." << std::endl;
     } catch (const std::exception& e) {
-        std::cerr << "\nОшибка: " << e.what() << std::endl;
+        std::cerr << "\nError: " << e.what() << std::endl;
         return 1;
     }
 

@@ -1,15 +1,18 @@
 # TRAKD - Tandem Repeat Analysis with K-mer Decomposition
 
-TRAKD is a high-performance bioinformatics toolkit for analyzing repetitive sequences in genomes using k-mer decomposition. It identifies tandem repeats, clustered repetitive elements, and analyzes their distribution patterns across genomic sequences.
+TRAKD is a high-performance bioinformatics toolkit for analyzing repetitive sequences in genomes using k-mer decomposition. It identifies tandem repeats, dispersed repeats, transposable elements, and analyzes their distribution patterns across genomic sequences. The tools work synergistically to distinguish between different types of repetitive DNA.
 
 ## Features
 
 - **Fast k-mer indexing** with multi-threaded processing
-- **Locus detection** for identifying clusters of repetitive sequences
-- **Distance analysis** for understanding repeat spacing patterns
-- **Detailed statistics** including entropy calculations and Jaccard similarity metrics
+- **Tandem repeat detection** using locus clustering and distance patterns
+- **Dispersed repeat identification** for transposable elements and mobile DNA
+- **Distance entropy analysis** to distinguish repeat types
+- **Intelligent filtering** using cross-tool information
+- **Context-based similarity** for grouping repeat families
 - **Memory-efficient** processing of large genomes
 - **Cross-platform** support (Linux, macOS, Windows)
+- **Visualization tools** for karyotype and circular plots
 
 ## Installation
 
@@ -33,9 +36,24 @@ make debug
 
 The compiled executables will be in the `bin/` directory.
 
+## Quick Start
+
+```bash
+# Analyze a genome for all repeat types
+make
+bin/kmer_analyzer genome.fasta kmers_top100.txt kmers.bin contigs.cidx
+samtools faidx genome.fasta
+bin/LocusBedGeneratorDetailed kmers.bin genome.fasta.fai tandem_repeats.bed
+bin/distance_analyzer_detailed kmers.bin distances.tsv
+bin/dispersed_repeat_finder kmers.bin contigs.cidx dispersed_repeats.bed distances.tsv tandem_repeats.bed
+
+# Visualize results
+python visualize_karyotype.py tandem_repeats.bed genome.fasta.fai karyotype.png
+```
+
 ## Tools Overview
 
-TRAKD consists of four complementary tools that work together in a pipeline:
+TRAKD consists of five complementary tools that work together in a pipeline. The tools can be used independently or in combination for enhanced results:
 
 ### 1. kmer_analyzer
 Analyzes k-mer frequencies and positions in FASTA sequences.
@@ -85,12 +103,13 @@ chr1    5000    7500    locus_2_len_2500
 Advanced locus detection with detailed statistics and intelligent merging.
 
 ```bash
-bin/LocusBedGeneratorDetailed <input.bin> <reference.fai> <output.bed> [min_tf] [locus_gap] [min_locus_kmers] [inter_overlap] [jaccard_thresh] [threads]
+bin/LocusBedGeneratorDetailed <input.bin> <reference.fai> <output.bed> [min_tf] [locus_gap] [min_locus_kmers] [inter_overlap] [jaccard_thresh] [min_length] [threads]
 ```
 
 **Additional parameters:**
 - `inter_overlap`: Strong overlap threshold for merging (default: 0.9)
 - `jaccard_thresh`: Jaccard similarity threshold (default: 0.5)
+- `min_length`: Minimum locus length to output (default: 100)
 
 **Output format (BED with detailed annotations):**
 ```
@@ -119,8 +138,41 @@ kmer    kmer_tf    dist_entropy    locus_count    max_locus_size    distances_su
 AAAAAAAAAAAAA    150000    2.5    10    5000    100:5000:0.033|200:3000:0.020|...
 ```
 
-## Usage Example
+### 5. dispersed_repeat_finder
+Identifies dispersed repeats with similar k-mer contexts (e.g., transposable elements). Can use outputs from other tools for better seed selection and region exclusion.
 
+```bash
+bin/dispersed_repeat_finder <input.bin> <contigs.cidx> <output.bed> [distance.tsv] [exclusion.bed] [min_tf] [window] [similarity] [min_inst] [max_entropy] [threads]
+```
+
+**Parameters:**
+- `input.bin`: Binary file from kmer_analyzer
+- `contigs.cidx`: Contig index file from kmer_analyzer
+- `output.bed`: Output BED file with dispersed repeats
+- `distance.tsv`: (Optional) Distance analysis file from distance_analyzer_detailed for entropy filtering (use 'none' to skip)
+- `exclusion.bed`: (Optional) BED file with tandem repeat regions to exclude from LocusBedGeneratorDetailed (use 'none' to skip)
+- `min_tf`: (Optional) Minimum k-mer frequency (default: 100)
+- `window`: (Optional) Context window size in bp (default: 500)
+- `similarity`: (Optional) Minimum context similarity 0-1 (default: 0.7)
+- `min_inst`: (Optional) Minimum instances per repeat (default: 5)
+- `max_entropy`: (Optional) Maximum distance entropy for seed k-mers (default: 1.5)
+- `threads`: (Optional) Number of threads
+
+**Enhanced features:**
+- **Entropy filtering**: Uses distance analysis to select k-mers with high entropy (dispersed pattern)
+- **Region exclusion**: Excludes k-mers in tandem repeat regions identified by LocusBedGeneratorDetailed
+- **Smart seed selection**: Prioritizes k-mers likely to be mobile elements rather than tandem repeats
+
+**Output format (BED):**
+```
+track name="DispersedRepeats" description="Dispersed repeats with similar k-mer contexts"
+chr1    1000    1013    repeat_1_instance_1;seed=AAAAAAAAAAAAA;instances=10;similarity=0.85;upstream_context=5;downstream_context=7    850    .
+chr2    5000    5013    repeat_1_instance_2;seed=AAAAAAAAAAAAA;instances=10;similarity=0.85;upstream_context=5;downstream_context=7    850    .
+```
+
+## Usage Examples
+
+### Basic Workflow
 Here's a typical workflow for analyzing tandem repeats in a genome:
 
 ```bash
@@ -138,6 +190,54 @@ bin/LocusBedGeneratorDetailed kmers.bin genome.fasta.fai detailed_loci.bed 100 1
 
 # Step 5: Analyze distance patterns (optional)
 bin/distance_analyzer_detailed kmers.bin distances.tsv 100 0.01
+
+# Step 6: Find dispersed repeats (optional)
+bin/dispersed_repeat_finder kmers.bin contigs.cidx dispersed_repeats.bed
+
+# Step 7: Visualize results (optional)
+python visualize_karyotype.py detailed_loci.bed genome.fasta.fai karyotype.png --amplification 2.0
+python visualize_repeats_circular.py detailed_loci.bed genome.fasta.fai circular.png --center-image logo.png
+python visualize_repeats.py detailed_loci.bed genome.fasta.fai linear.png --min-tf 1000
+```
+
+### Advanced Workflow - Integrated Analysis
+For more accurate identification of different repeat types:
+
+```bash
+# Step 1: K-mer analysis
+bin/kmer_analyzer genome.fasta top100_kmers.txt kmers.bin contigs.cidx cache.kidx
+
+# Step 2: Generate FASTA index
+samtools faidx genome.fasta
+
+# Step 3: Detailed locus analysis (for tandem repeats)
+bin/LocusBedGeneratorDetailed kmers.bin genome.fasta.fai tandem_repeats.bed 100 10000 2 0.9 0.5 100
+
+# Step 4: Distance pattern analysis
+bin/distance_analyzer_detailed kmers.bin distances.tsv 100 0.01
+
+# Step 5: Find dispersed repeats with intelligent filtering
+# Uses entropy scores from distance analysis to select dispersed k-mers
+# Excludes regions identified as tandem repeats
+bin/dispersed_repeat_finder kmers.bin contigs.cidx dispersed_repeats.bed distances.tsv tandem_repeats.bed 100 500 0.7 5 1.5
+
+# Step 6: Visualize both repeat types
+python visualize_karyotype.py tandem_repeats.bed genome.fasta.fai tandem_karyotype.png --title "Tandem Repeats"
+python visualize_karyotype.py dispersed_repeats.bed genome.fasta.fai dispersed_karyotype.png --title "Dispersed Repeats"
+```
+
+### Targeted Analysis Examples
+
+#### Finding Transposable Elements
+```bash
+# Use high entropy threshold to focus on dispersed elements
+bin/dispersed_repeat_finder kmers.bin contigs.cidx transposons.bed distances.tsv tandem_repeats.bed 500 1000 0.8 10 2.0 8
+```
+
+#### Finding Satellite DNA
+```bash
+# Use detailed locus generator with strict parameters
+bin/LocusBedGeneratorDetailed kmers.bin genome.fasta.fai satellites.bed 1000 5000 5 0.95 0.8 500 8
 ```
 
 ## Understanding the Output
@@ -160,21 +260,57 @@ The distance analyzer helps identify:
 - Random distributions (high entropy)
 - Clustered vs. dispersed repeat patterns
 
+### Dispersed Repeats
+The dispersed repeat finder identifies:
+- Transposable elements with conserved flanking sequences
+- Repeats with similar k-mer contexts
+- Families of mobile elements
+- Context similarity scores between instances
+
+**Enhanced with other tool outputs:**
+- Uses entropy scores to select dispersed (not tandem) k-mers
+- Excludes regions already identified as tandem repeats
+- Focuses on true mobile elements and transposons
+
+## Tool Synergy
+
+TRAKD tools are designed to work together for comprehensive repeat analysis:
+
+1. **kmer_analyzer** → Creates the foundation index for all other tools
+2. **distance_analyzer_detailed** → Provides entropy scores to distinguish repeat types:
+   - Low entropy (< 1.5): Regular spacing, likely tandem repeats
+   - High entropy (> 1.5): Irregular spacing, likely dispersed repeats
+3. **LocusBedGeneratorDetailed** → Identifies tandem repeat regions with detailed statistics
+4. **dispersed_repeat_finder** → Uses entropy scores and exclusion regions for accurate transposon detection
+5. **Visualization tools** → Create publication-ready figures for both repeat types
+
 ## Performance Tips
 
 1. **Use caching**: The `.kidx` cache file speeds up re-analysis of the same genome
 2. **Adjust thread count**: Use fewer threads if memory is limited
 3. **Filter by frequency**: Higher `min_tf` values focus on more repetitive elements
 4. **Tune locus parameters**: Adjust `locus_gap` based on your repeat characteristics
+5. **Combine tools** for best results:
+   - Use `distance_analyzer_detailed` to calculate entropy scores
+   - Use `LocusBedGeneratorDetailed` to identify tandem repeat regions
+   - Feed both outputs to `dispersed_repeat_finder` for accurate transposon detection
+   - Low entropy k-mers (< 1.5) are likely tandem repeats
+   - High entropy k-mers (> 1.5) are good candidates for dispersed repeats
+6. **Tune parameters** based on your organism:
+   - Birds/reptiles: Consider larger window sizes for dispersed repeats (1000bp)
+   - Mammals: Standard parameters work well
+   - Plants: May need higher frequency thresholds due to polyploidy
 
 ## Applications
 
 TRAKD is useful for:
-- Identifying tandem repeats and satellites
-- Analyzing transposable element distributions
-- Studying centromeric and telomeric repeats
-- Genome assembly quality assessment
-- Comparative genomics of repetitive elements
+- **Genome annotation**: Comprehensive repeat identification and classification
+- **Tandem repeat analysis**: Satellites, microsatellites, centromeric/telomeric repeats
+- **Transposable element discovery**: LINEs, SINEs, DNA transposons, LTR retrotransposons
+- **Genome assembly quality**: Identifying repetitive regions that may cause assembly issues
+- **Comparative genomics**: Analyzing repeat evolution across species
+- **Population genetics**: Studying repeat polymorphisms
+- **Clinical genetics**: Identifying pathogenic repeat expansions
 
 ## Citation
 
@@ -187,6 +323,87 @@ https://github.com/aglabx/TRAKD
 ## License
 
 TRAKD is released under the MIT License. See [LICENSE](LICENSE) file for details.
+
+## Visualization Tools
+
+TRAKD includes Python scripts for visualizing repeat patterns:
+
+### visualize_karyotype.py
+Creates a karyotype-style visualization showing k-mer repeats on paired chromosomes.
+
+```bash
+python visualize_karyotype.py detailed_loci.bed genome.fai output.png [options]
+
+Options:
+  --amplification FLOAT  Horizontal signal amplification (default: 1.0)
+  --min-tf INT          Minimum k-mer frequency to display (default: 0)
+  --width FLOAT         Figure width in inches (default: 16)
+  --height FLOAT        Figure height in inches (default: 12)
+  --title TEXT          Custom plot title
+```
+
+Features:
+- Maternal/paternal chromosome pairing
+- Signal amplification for better visibility
+- All k-mer types shown in legend
+- Automatic filtering of mitochondrial and rDNA sequences
+
+### visualize_repeats_circular.py
+Creates circular (Circos-style) or heatmap visualizations.
+
+```bash
+python visualize_repeats_circular.py detailed_loci.bed genome.fai output.png [options]
+
+Options:
+  --style {circular,heatmap}  Visualization style (default: circular)
+  --size FLOAT               Figure size in inches (default: 14)
+  --min-tf INT               Minimum k-mer frequency (default: 0)
+  --center-image PATH        Image to place in center of circular plot
+  --show-legend              Show k-mer legend (default: hidden)
+  --title TEXT               Custom plot title
+```
+
+Features:
+- Maternal/paternal chromosomes on different radii
+- Option to add central image (logos, etc.)
+- K-mer legend hidden by default for cleaner presentation
+- Heatmap mode for density visualization
+
+### visualize_repeats.py
+Creates linear chromosome visualization with all chromosomes stacked.
+
+```bash
+python visualize_repeats.py detailed_loci.bed genome.fai output.png [options]
+
+Options:
+  --width FLOAT         Figure width in inches (default: 16)
+  --min-tf INT         Minimum k-mer frequency (default: 0)
+  --chromosomes LIST   Specific chromosomes to plot
+  --title TEXT         Custom plot title
+```
+
+### analyze_repeats_stats.py
+Generates statistical analysis and summary plots.
+
+```bash
+python analyze_repeats_stats.py detailed_loci.bed --output-prefix analysis
+
+Outputs:
+  - analysis_summary.txt: Comprehensive text report
+  - analysis_distributions.png: Distribution plots
+  - analysis_composition.png: K-mer composition analysis
+  - analysis_kmer_stats.csv: Detailed k-mer statistics
+  - analysis_chrom_stats.csv: Chromosome-level statistics
+```
+
+## Visualization Features
+
+- **K-mer grouping**: Reverse complements are automatically grouped
+- **Color coding**: Unique colors for each k-mer type using golden ratio distribution
+- **Signal enhancement**: Amplification options for better visibility
+- **Multiple formats**: PNG, PDF, SVG output supported
+- **Customization**: Titles, filtering, and display options
+- **Attribution**: All plots include "Created by TRAKD" signature
 
 ## Contributing
 

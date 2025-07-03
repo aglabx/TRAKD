@@ -7,13 +7,13 @@
 #include <cstdint>
 #include <stdexcept>
 #include <chrono>
-#include <iomanip> // для std::setprecision
-#include <sstream> // для std::stringstream
+#include <iomanip> // for std::setprecision
+#include <sstream> // for std::stringstream
 #include <thread>
 #include <atomic>
 #include <mutex>
 
-// --- Платформо-зависимые утилиты для памяти ---
+// --- Platform-dependent memory utilities ---
 #if defined(_WIN32)
 #include <windows.h>
 #include <psapi.h>
@@ -25,7 +25,7 @@
 #include <mach/mach.h>
 #endif
 
-// --- Утилиты ---
+// --- Utilities ---
 
 double getMemoryUsage() {
 #if defined(_WIN32)
@@ -78,7 +78,7 @@ void printProgressBar(double percentage, const std::string& message, std::chrono
     if (percentage >= 1.0) std::cerr << std::endl;
 }
 
-// --- Основные структуры ---
+// --- Main structures ---
 
 struct ContigInfo {
     std::string name;
@@ -108,7 +108,7 @@ public:
         readAllKmerData(input_binary_full, kmer_jobs, min_kmer_tf);
         
         if (kmer_jobs.empty()) {
-            std::cerr << "Нет k-меров для анализа после применения фильтра." << std::endl;
+            std::cerr << "No k-mers for analysis after applying filter." << std::endl;
             std::ofstream out(output_bed);
             out << "track name=\"MergedKmerLoci\" description=\"Merged loci from k-mer chains\"\n";
             return;
@@ -124,9 +124,9 @@ private:
 
     void loadFaiIndex(const std::string& filename) {
         auto start_time = std::chrono::steady_clock::now();
-        printProgressBar(0.0, "Чтение .fai индекса", start_time);
+        printProgressBar(0.0, "Reading .fai index", start_time);
         std::ifstream file(filename);
-        if (!file) throw std::runtime_error("Невозможно открыть .fai файл индекса: " + filename);
+        if (!file) throw std::runtime_error("Cannot open .fai index file: " + filename);
         
         contig_map.clear();
         std::string line;
@@ -140,21 +140,21 @@ private:
             contig_map.push_back(info);
             current_offset += info.length;
         }
-        if (contig_map.empty()) throw std::runtime_error("Файл .fai индекса пуст или имеет неверный формат.");
-        printProgressBar(1.0, "Чтение .fai индекса", start_time);
+        if (contig_map.empty()) throw std::runtime_error(".fai index file is empty or has invalid format.");
+        printProgressBar(1.0, "Reading .fai index", start_time);
     }
 
     void readAllKmerData(const std::string& filename, std::vector<KmerRawData>& kmer_jobs, uint32_t min_kmer_tf) {
         auto start_time = std::chrono::steady_clock::now();
         std::ifstream in(filename, std::ios::binary);
-        if (!in) throw std::runtime_error("Невозможно открыть полный бинарный файл: " + filename);
+        if (!in) throw std::runtime_error("Cannot open full binary file: " + filename);
         
         uint64_t total_kmers_in_file;
         in.read(reinterpret_cast<char*>(&total_kmers_in_file), sizeof(total_kmers_in_file));
         if (!in || total_kmers_in_file == 0) return;
         
-        std::cerr << "Информация из заголовка: " << total_kmers_in_file << " k-меров в файле." << std::endl;
-        printProgressBar(0.0, "Чтение данных", start_time);
+        std::cerr << "Header information: " << total_kmers_in_file << " k-mers in file." << std::endl;
+        printProgressBar(0.0, "Reading data", start_time);
 
         for (uint64_t i = 0; i < total_kmers_in_file; ++i) {
             uint64_t kmer_val;
@@ -163,22 +163,22 @@ private:
             in.read(reinterpret_cast<char*>(&kmer_tf), sizeof(kmer_tf));
 
             if (kmer_tf < min_kmer_tf) {
-                std::cerr << "\nДостигнут порог частоты k-мера (" << min_kmer_tf << "). Загружено " << i << " k-меров." << std::endl;
+                std::cerr << "\nReached k-mer frequency threshold (" << min_kmer_tf << "). Loaded " << i << " k-mers." << std::endl;
                 break;
             }
 
             uint64_t pos_size, dist_size;
             in.read(reinterpret_cast<char*>(&pos_size), sizeof(pos_size));
             
-            // *** ПОДРОБНОЕ ЛОГИРОВАНИЕ И ПРОВЕРКА БЕЗОПАСНОСТИ ***
-            if (i % 1000 == 0) { // Логируем не для каждого k-мера, чтобы не засорять вывод
-                std::cerr << "\n[DEBUG] Чтение k-мера " << i << ": tf=" << kmer_tf << ", pos_size=" << pos_size;
+            // *** DETAILED LOGGING AND SAFETY CHECK ***
+            if (i % 1000 == 0) { // Log not for every k-mer to avoid cluttering output
+                std::cerr << "\n[DEBUG] Reading k-mer " << i << ": tf=" << kmer_tf << ", pos_size=" << pos_size;
             }
-            const uint64_t SANE_LIMIT = 2000000000; // 2 миллиарда позиций - очень щедрый лимит
+            const uint64_t SANE_LIMIT = 2000000000; // 2 billion positions - very generous limit
             if (pos_size > SANE_LIMIT) {
-                std::cerr << "\n\nОШИБКА: Обнаружен k-mer с нереалистично большим числом позиций (" << pos_size << ").\n"
-                          << "Файл " << filename << " может быть поврежден или иметь неверный формат.\n"
-                          << "Аварийное завершение во избежание сбоя выделения памяти." << std::endl;
+                std::cerr << "\n\nERROR: Found k-mer with unrealistically large number of positions (" << pos_size << ").\n"
+                          << "File " << filename << " may be corrupted or have incorrect format.\n"
+                          << "Emergency exit to avoid memory allocation failure." << std::endl;
                 exit(1);
             }
             
@@ -187,7 +187,7 @@ private:
             try {
                 job.positions.resize(pos_size);
             } catch (const std::bad_alloc& e) {
-                 std::cerr << "\n\nКРИТИЧЕСКАЯ ОШИБКА: std::bad_alloc при попытке выделить память для " << pos_size << " позиций.\n"
+                 std::cerr << "\n\nCRITICAL ERROR: std::bad_alloc when trying to allocate memory for " << pos_size << " positions.\n"
                            << "k-mer index: " << i << ", tf: " << kmer_tf << std::endl;
                  throw;
             }
@@ -196,14 +196,14 @@ private:
             in.read(reinterpret_cast<char*>(&dist_size), sizeof(dist_size));
             in.seekg(dist_size * sizeof(uint64_t), std::ios_base::cur);
             
-            if (!in) throw std::runtime_error("Ошибка при чтении бинарного файла.");
+            if (!in) throw std::runtime_error("Error reading binary file.");
             kmer_jobs.push_back(std::move(job));
 
             if (i % 500 == 0) {
-                printProgressBar(static_cast<double>(i + 1) / total_kmers_in_file, "Чтение данных", start_time);
+                printProgressBar(static_cast<double>(i + 1) / total_kmers_in_file, "Reading data", start_time);
             }
         }
-        printProgressBar(1.0, "Чтение данных", start_time);
+        printProgressBar(1.0, "Reading data", start_time);
     }
 
     void findLociWorker(const std::vector<KmerRawData>& jobs, std::vector<Locus>& local_loci, std::atomic<size_t>& next_job_idx, uint32_t locus_gap_threshold, uint32_t min_locus_kmer_count) {
@@ -234,7 +234,7 @@ private:
 
     std::vector<Locus> findPrimaryLociParallel(const std::vector<KmerRawData>& kmer_jobs, uint32_t locus_gap_threshold, uint32_t min_locus_kmer_count, unsigned int num_threads) {
         auto start_time = std::chrono::steady_clock::now();
-        std::string msg = "Поиск локусов (" + std::to_string(num_threads) + " п.)";
+        std::string msg = "Finding loci (" + std::to_string(num_threads) + " thr.)";
         std::vector<std::thread> threads;
         std::vector<std::vector<Locus>> thread_local_loci(num_threads);
         std::atomic<size_t> next_job_idx{0};
@@ -257,10 +257,10 @@ private:
 
     std::vector<Locus> mergeLoci(std::vector<Locus>& loci) {
         auto start_time = std::chrono::steady_clock::now();
-        if (loci.empty()) { printProgressBar(1.0, "Слияние локусов", start_time); return {}; }
-        printProgressBar(0.0, "Слияние локусов", start_time, "[1/2 Сортировка]");
+        if (loci.empty()) { printProgressBar(1.0, "Merging loci", start_time); return {}; }
+        printProgressBar(0.0, "Merging loci", start_time, "[1/2 Sorting]");
         std::sort(loci.begin(), loci.end());
-        printProgressBar(0.5, "Слияние локусов", start_time, "[2/2 Слияние]");
+        printProgressBar(0.5, "Merging loci", start_time, "[2/2 Merging]");
         std::vector<Locus> merged_loci;
         merged_loci.push_back(loci[0]);
         for (size_t i = 1; i < loci.size(); ++i) {
@@ -269,31 +269,31 @@ private:
             } else {
                 merged_loci.push_back(loci[i]);
             }
-            if (i % 10000 == 0) printProgressBar(0.5 + 0.5 * (static_cast<double>(i) / loci.size()), "Слияние локусов", start_time, "[2/2 Слияние]");
+            if (i % 10000 == 0) printProgressBar(0.5 + 0.5 * (static_cast<double>(i) / loci.size()), "Merging loci", start_time, "[2/2 Merging]");
         }
-        printProgressBar(1.0, "Слияние локусов", start_time);
+        printProgressBar(1.0, "Merging loci", start_time);
         return merged_loci;
     }
 
     void writeBedFile(const std::string& filename, const std::vector<Locus>& merged_loci) {
         auto start_time = std::chrono::steady_clock::now();
         std::ofstream out(filename);
-        if (!out) throw std::runtime_error("Невозможно открыть BED файл для записи: " + filename);
+        if (!out) throw std::runtime_error("Cannot open BED file for writing: " + filename);
         out << "track name=\"MergedKmerLoci\" description=\"Merged loci from k-mer chains\"\n";
-        if (merged_loci.empty()) { printProgressBar(1.0, "Запись BED файла", start_time); return; }
-        printProgressBar(0.0, "Запись BED файла", start_time);
+        if (merged_loci.empty()) { printProgressBar(1.0, "Writing BED file", start_time); return; }
+        printProgressBar(0.0, "Writing BED file", start_time);
         for (size_t i = 0; i < merged_loci.size(); ++i) {
             const auto& locus = merged_loci[i];
             size_t contig_idx = findContigIndex(locus.start);
             const auto& contig = contig_map[contig_idx];
             uint64_t local_start = locus.start - contig.global_offset;
-            uint64_t local_end = locus.end - contig.global_offset + 13; // +k для полной длины
+            uint64_t local_end = locus.end - contig.global_offset + 13; // +k for full length
             if (local_end > contig.length) local_end = contig.length;
             out << contig.name << "\t" << local_start << "\t" << local_end << "\t"
                 << "locus_" << i+1 << "_len_" << (local_end - local_start) << "\t" << "0\t.\n";
-            if (i % 1000 == 0) printProgressBar(static_cast<double>(i+1)/merged_loci.size(), "Запись BED файла", start_time);
+            if (i % 1000 == 0) printProgressBar(static_cast<double>(i+1)/merged_loci.size(), "Writing BED file", start_time);
         }
-        printProgressBar(1.0, "Запись BED файла", start_time);
+        printProgressBar(1.0, "Writing BED file", start_time);
     }
 
     size_t findContigIndex(uint64_t global_pos) const {
@@ -306,14 +306,14 @@ private:
 
 int main(int argc, char* argv[]) {
     if (argc < 4 || argc > 8) {
-        std::cerr << "Использование: " << argv[0] << " <input.bin> <input.fai> <output.bed> [min_tf] [locus_gap] [min_locus_kmers] [threads]" << std::endl;
-        std::cerr << "  <input.bin>         - бинарный файл от kmer_analyzer." << std::endl;
-        std::cerr << "  <input.fai>         - стандартный FASTA индекс (.fai)." << std::endl;
-        std::cerr << "  <output.bed>        - BED файл со слитыми локусами." << std::endl;
-        std::cerr << "  [min_kmer_tf]       - необязательный. Мин. частота k-мера для анализа (по умолч.: 100)." << std::endl;
-        std::cerr << "  [locus_gap]         - необязательный. Макс. разрыв внутри локуса (по умолч.: 10000)." << std::endl;
-        std::cerr << "  [min_locus_kmers]   - необязательный. Мин. число k-меров в локусе (по умолч.: 2)." << std::endl;
-        std::cerr << "  [threads]           - необязательный. Количество потоков (по умолч.: все доступные)." << std::endl;
+        std::cerr << "Usage: " << argv[0] << " <input.bin> <input.fai> <output.bed> [min_tf] [locus_gap] [min_locus_kmers] [threads]" << std::endl;
+        std::cerr << "  <input.bin>         - binary file from kmer_analyzer." << std::endl;
+        std::cerr << "  <input.fai>         - standard FASTA index (.fai)." << std::endl;
+        std::cerr << "  <output.bed>        - BED file with merged loci." << std::endl;
+        std::cerr << "  [min_kmer_tf]       - optional. Min. k-mer frequency for analysis (default: 100)." << std::endl;
+        std::cerr << "  [locus_gap]         - optional. Max. gap within locus (default: 10000)." << std::endl;
+        std::cerr << "  [min_locus_kmers]   - optional. Min. number of k-mers in locus (default: 2)." << std::endl;
+        std::cerr << "  [threads]           - optional. Number of threads (default: all available)." << std::endl;
         return 1;
     }
 
@@ -325,22 +325,22 @@ int main(int argc, char* argv[]) {
     uint32_t min_locus_kmer_count = 2;
     unsigned int num_threads = std::thread::hardware_concurrency();
 
-    if (argc >= 5) { try { min_kmer_tf = std::stoul(argv[4]); } catch (...) { std::cerr << "Ошибка: неверное значение для min_kmer_tf." << std::endl; return 1; } }
-    if (argc >= 6) { try { locus_gap_threshold = std::stoul(argv[5]); } catch (...) { std::cerr << "Ошибка: неверное значение для locus_gap_threshold." << std::endl; return 1; } }
-    if (argc >= 7) { try { min_locus_kmer_count = std::stoul(argv[6]); } catch (...) { std::cerr << "Ошибка: неверное значение для min_locus_kmers." << std::endl; return 1; } }
+    if (argc >= 5) { try { min_kmer_tf = std::stoul(argv[4]); } catch (...) { std::cerr << "Error: invalid value for min_kmer_tf." << std::endl; return 1; } }
+    if (argc >= 6) { try { locus_gap_threshold = std::stoul(argv[5]); } catch (...) { std::cerr << "Error: invalid value for locus_gap_threshold." << std::endl; return 1; } }
+    if (argc >= 7) { try { min_locus_kmer_count = std::stoul(argv[6]); } catch (...) { std::cerr << "Error: invalid value for min_locus_kmers." << std::endl; return 1; } }
     if (argc >= 8) {
         try {
             num_threads = std::stoul(argv[7]);
             if (num_threads == 0) num_threads = 1;
-        } catch (...) { std::cerr << "Ошибка: неверное значение для num_threads." << std::endl; return 1; }
+        } catch (...) { std::cerr << "Error: invalid value for num_threads." << std::endl; return 1; }
     }
     
     try {
         LocusBedGenerator merger;
         merger.generate(input_file, fai_file, output_file, min_kmer_tf, locus_gap_threshold, min_locus_kmer_count, num_threads);
-        std::cout << "\nСоздание BED файла успешно завершено." << std::endl;
+        std::cout << "\nBED file creation completed successfully." << std::endl;
     } catch (const std::exception& e) {
-        std::cerr << "\nОшибка: " << e.what() << std::endl;
+        std::cerr << "\nError: " << e.what() << std::endl;
         return 1;
     }
 

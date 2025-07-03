@@ -7,16 +7,16 @@
 #include <cstdint>
 #include <stdexcept>
 #include <chrono>
-#include <iomanip> // для std::setprecision
-#include <sstream> // для std::stringstream
+#include <iomanip> // for std::setprecision
+#include <sstream> // for std::stringstream
 #include <thread>
 #include <atomic>
 #include <mutex>
-#include <cmath> // для log2
+#include <cmath> // for log2
 
-// --- Утилиты ---
+// --- Utilities ---
 
-// Вспомогательная функция для форматирования времени в MM:SS
+// Helper function to format time as MM:SS
 std::string formatTime(long long seconds) {
     if (seconds < 0) return "--:--";
     long long minutes = seconds / 60;
@@ -26,11 +26,11 @@ std::string formatTime(long long seconds) {
     return buffer;
 }
 
-// Функция для отображения прогресс-бара
+// Function to display a progress bar
 void printProgressBar(double percentage, const std::string& message, std::chrono::steady_clock::time_point start_time, const std::string& extra_info = "") {
     percentage = std::max(0.0, std::min(1.0, percentage));
     int val = static_cast<int>(percentage * 100);
-    int lpad = static_cast<int>(percentage * 40); // Уменьшено для доп. информации
+    int lpad = static_cast<int>(percentage * 40); // Reduced for extra info
     int rpad = 40 - lpad;
 
     auto now = std::chrono::steady_clock::now();
@@ -58,7 +58,7 @@ void printProgressBar(double percentage, const std::string& message, std::chrono
     }
 }
 
-// Функция для преобразования 64-битного числа в k-mer строку
+// Function to convert a 64-bit integer to a k-mer string
 std::string uint64ToKmer(uint64_t kmer_val, int k) {
     std::string kmer_str(k, ' ');
     uint64_t mask = 3;
@@ -74,13 +74,13 @@ std::string uint64ToKmer(uint64_t kmer_val, int k) {
     return kmer_str;
 }
 
-// --- Основной класс анализатора ---
+// --- Main Analyzer Class ---
 
 struct KmerRawData {
     uint64_t kmer_val;
     uint32_t kmer_tf;
-    std::vector<uint32_t> positions;
-    std::vector<uint32_t> distances;
+    std::vector<uint64_t> positions;
+    std::vector<uint64_t> distances;
 };
 
 struct KmerAnalysisResult {
@@ -97,23 +97,23 @@ class DistanceAnalyzer {
 public:
     void analyze(const std::string& input_binary_full, const std::string& output_tsv, int k_size, uint32_t min_kmer_tf, double min_dist_fraction, uint32_t locus_gap_threshold, unsigned int num_threads) {
         
-        // --- Этап 1: Чтение всех данных в память ---
+        // --- Step 1: Read all data into memory ---
         std::vector<KmerRawData> jobs;
         readAllJobs(input_binary_full, jobs, min_kmer_tf);
         
         if (jobs.empty()) {
-            std::cerr << "Нет данных для анализа после применения фильтров." << std::endl;
-            // Создаем пустой файл с заголовком
+            std::cerr << "No data to analyze after applying filters." << std::endl;
+            // Create an empty file with header
             std::ofstream out(output_tsv);
             out << "kmer\tkmer_tf\tdist_entropy\tlocus_count\tmax_locus_size\tdistances_summary\n";
             return;
         }
 
-        // --- Этап 2: Параллельный анализ ---
+        // --- Step 2: Parallel analysis ---
         std::vector<KmerAnalysisResult> results;
         processJobsParallel(jobs, results, k_size, min_dist_fraction, locus_gap_threshold, num_threads);
 
-        // --- Этап 3: Запись результатов ---
+        // --- Step 3: Write results ---
         writeResultsToFile(output_tsv, results);
     }
 
@@ -121,16 +121,16 @@ private:
     void readAllJobs(const std::string& filename, std::vector<KmerRawData>& jobs, uint32_t min_kmer_tf) {
         auto start_time = std::chrono::steady_clock::now();
         std::ifstream in(filename, std::ios::binary);
-        if (!in) throw std::runtime_error("Невозможно открыть полный бинарный файл для чтения: " + filename);
+        if (!in) throw std::runtime_error("Cannot open full binary file for reading: " + filename);
         
         uint64_t total_kmers_in_file;
         in.read(reinterpret_cast<char*>(&total_kmers_in_file), sizeof(total_kmers_in_file));
         if (!in || total_kmers_in_file == 0) {
-            printProgressBar(1.0, "Чтение заданий", start_time);
+            printProgressBar(1.0, "Reading jobs", start_time);
             return;
         }
         
-        printProgressBar(0.0, "Чтение заданий", start_time);
+        printProgressBar(0.0, "Reading jobs", start_time);
         
         for (uint64_t i = 0; i < total_kmers_in_file; ++i) {
             KmerRawData job;
@@ -142,20 +142,20 @@ private:
             uint64_t pos_size, dist_size;
             in.read(reinterpret_cast<char*>(&pos_size), sizeof(pos_size));
             job.positions.resize(pos_size);
-            in.read(reinterpret_cast<char*>(job.positions.data()), pos_size * sizeof(uint32_t));
+            in.read(reinterpret_cast<char*>(job.positions.data()), pos_size * sizeof(uint64_t));
 
             in.read(reinterpret_cast<char*>(&dist_size), sizeof(dist_size));
             job.distances.resize(dist_size);
-            in.read(reinterpret_cast<char*>(job.distances.data()), dist_size * sizeof(uint32_t));
+            in.read(reinterpret_cast<char*>(job.distances.data()), dist_size * sizeof(uint64_t));
 
-            if (!in) throw std::runtime_error("Ошибка при чтении бинарного файла.");
+            if (!in) throw std::runtime_error("Error reading binary file.");
             jobs.push_back(std::move(job));
             
             if (i % 1000 == 0) {
-                printProgressBar(static_cast<double>(i + 1) / total_kmers_in_file, "Чтение заданий", start_time);
+                printProgressBar(static_cast<double>(i + 1) / total_kmers_in_file, "Reading jobs", start_time);
             }
         }
-        printProgressBar(1.0, "Чтение заданий", start_time);
+        printProgressBar(1.0, "Reading jobs", start_time);
     }
 
     void worker_thread_function(
@@ -172,9 +172,9 @@ private:
 
             const auto& job = jobs[i];
             
-            // --- Анализ дистанций ---
-            std::unordered_map<uint32_t, uint32_t> local_dist_counts;
-            for (uint32_t dist : job.distances) {
+            // --- Distance analysis ---
+            std::unordered_map<uint64_t, uint32_t> local_dist_counts;
+            for (uint64_t dist : job.distances) {
                 local_dist_counts[dist]++;
             }
             
@@ -182,13 +182,13 @@ private:
             if (!job.distances.empty()) {
                 for (const auto& pair : local_dist_counts) {
                     double p = static_cast<double>(pair.second) / job.distances.size();
-                    if (p > 0) { // log2(0) не определен
+                    if (p > 0) { // log2(0) is undefined
                         entropy -= p * log2(p);
                     }
                 }
             }
 
-            std::vector<std::pair<uint32_t, uint32_t>> sorted_local_dists;
+            std::vector<std::pair<uint64_t, uint32_t>> sorted_local_dists;
             for (const auto& pair : local_dist_counts) sorted_local_dists.push_back(pair);
             std::sort(sorted_local_dists.begin(), sorted_local_dists.end(), 
                 [](const auto& a, const auto& b) { return a.second > b.second; });
@@ -206,7 +206,7 @@ private:
                 }
             }
 
-            // --- Анализ локусов ---
+            // --- Locus analysis ---
             uint32_t locus_count = 0;
             uint32_t max_locus_size = 0;
             if (!job.positions.empty()) {
@@ -237,7 +237,7 @@ private:
         unsigned int num_threads
     ) {
         auto start_time = std::chrono::steady_clock::now();
-        std::string msg = "Анализ (" + std::to_string(num_threads) + " п.)";
+        std::string msg = "Analysis (" + std::to_string(num_threads) + " thr)";
         results.resize(jobs.size());
 
         std::vector<std::thread> threads;
@@ -264,16 +264,16 @@ private:
     void writeResultsToFile(const std::string& filename, std::vector<KmerAnalysisResult>& results) {
         auto start_time = std::chrono::steady_clock::now();
         std::ofstream out(filename);
-        if (!out) throw std::runtime_error("Невозможно открыть TSV файл для записи: " + filename);
+        if (!out) throw std::runtime_error("Cannot open TSV file for writing: " + filename);
 
         out << "kmer\tkmer_tf\tdist_entropy\tlocus_count\tmax_locus_size\tdistances_summary\n";
         
         if (results.empty()) {
-            printProgressBar(1.0, "Запись результатов", start_time);
+            printProgressBar(1.0, "Writing results", start_time);
             return;
         }
 
-        printProgressBar(0.0, "Запись результатов", start_time);
+        printProgressBar(0.0, "Writing results", start_time);
         for(size_t i = 0; i < results.size(); ++i) {
             const auto& res = results[i];
             out << res.kmer_str << "\t" 
@@ -283,22 +283,22 @@ private:
                 << res.max_locus_size << "\t"
                 << res.summary << "\n";
             if (i % 1000 == 0 || i == results.size() - 1) {
-                printProgressBar(static_cast<double>(i + 1) / results.size(), "Запись результатов", start_time);
+                printProgressBar(static_cast<double>(i + 1) / results.size(), "Writing results", start_time);
             }
         }
-        printProgressBar(1.0, "Запись результатов", start_time);
+        printProgressBar(1.0, "Writing results", start_time);
     }
 };
 
 int main(int argc, char* argv[]) {
     if (argc < 3 || argc > 7) {
-        std::cerr << "Использование: " << argv[0] << " <input.bin> <output.tsv> [min_tf] [min_frac] [locus_gap] [threads]" << std::endl;
-        std::cerr << "  <input_full.bin>       - бинарный файл от kmer_analyzer." << std::endl;
-        std::cerr << "  <output_analysis.tsv>  - TSV файл с детальным анализом." << std::endl;
-        std::cerr << "  [min_kmer_tf]          - необязательный. Мин. частота k-мера (по умолч.: 0)." << std::endl;
-        std::cerr << "  [min_dist_fraction]    - необязательный. Мин. доля дистанции (по умолч.: 0.0)." << std::endl;
-        std::cerr << "  [locus_gap_threshold]  - необязательный. Макс. разрыв внутри локуса (по умолч.: 10000)." << std::endl;
-        std::cerr << "  [num_threads]          - необязательный. Количество потоков (по умолч.: все доступные)." << std::endl;
+        std::cerr << "Usage: " << argv[0] << " <input.bin> <output.tsv> [min_tf] [min_frac] [locus_gap] [threads]" << std::endl;
+        std::cerr << "  <input_full.bin>       - binary file from kmer_analyzer." << std::endl;
+        std::cerr << "  <output_analysis.tsv>  - TSV file with detailed analysis." << std::endl;
+        std::cerr << "  [min_kmer_tf]          - optional. Min. k-mer frequency (default: 0)." << std::endl;
+        std::cerr << "  [min_dist_fraction]    - optional. Min. distance fraction (default: 0.0)." << std::endl;
+        std::cerr << "  [locus_gap_threshold]  - optional. Max. gap within a locus (default: 10000)." << std::endl;
+        std::cerr << "  [num_threads]          - optional. Number of threads (default: all available)." << std::endl;
         return 1;
     }
 
@@ -309,14 +309,14 @@ int main(int argc, char* argv[]) {
     uint32_t locus_gap_threshold = 10000;
     unsigned int num_threads = std::thread::hardware_concurrency();
 
-    if (argc >= 4) { try { min_kmer_tf = std::stoul(argv[3]); } catch (...) { std::cerr << "Ошибка: неверное значение для min_kmer_tf." << std::endl; return 1; } }
-    if (argc >= 5) { try { min_dist_fraction = std::stod(argv[4]); } catch (...) { std::cerr << "Ошибка: неверное значение для min_dist_fraction." << std::endl; return 1; } }
-    if (argc >= 6) { try { locus_gap_threshold = std::stoul(argv[5]); } catch (...) { std::cerr << "Ошибка: неверное значение для locus_gap_threshold." << std::endl; return 1; } }
+    if (argc >= 4) { try { min_kmer_tf = std::stoul(argv[3]); } catch (...) { std::cerr << "Error: invalid value for min_kmer_tf." << std::endl; return 1; } }
+    if (argc >= 5) { try { min_dist_fraction = std::stod(argv[4]); } catch (...) { std::cerr << "Error: invalid value for min_dist_fraction." << std::endl; return 1; } }
+    if (argc >= 6) { try { locus_gap_threshold = std::stoul(argv[5]); } catch (...) { std::cerr << "Error: invalid value for locus_gap_threshold." << std::endl; return 1; } }
     if (argc >= 7) {
         try {
             num_threads = std::stoul(argv[6]);
             if (num_threads == 0) { num_threads = 1; }
-        } catch (...) { std::cerr << "Ошибка: неверное значение для num_threads." << std::endl; return 1; }
+        } catch (...) { std::cerr << "Error: invalid value for num_threads." << std::endl; return 1; }
     }
 
     const int K_SIZE = 13;
@@ -324,12 +324,11 @@ int main(int argc, char* argv[]) {
     try {
         DistanceAnalyzer analyzer;
         analyzer.analyze(input_file, output_file, K_SIZE, min_kmer_tf, min_dist_fraction, locus_gap_threshold, num_threads);
-        std::cout << "\nДетальный анализ дистанций успешно завершен." << std::endl;
+        std::cout << "\nDetailed distance analysis completed successfully." << std::endl;
     } catch (const std::exception& e) {
-        std::cerr << "\nОшибка: " << e.what() << std::endl;
+        std::cerr << "\nError: " << e.what() << std::endl;
         return 1;
     }
 
     return 0;
 }
-

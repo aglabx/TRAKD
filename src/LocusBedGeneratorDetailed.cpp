@@ -8,17 +8,17 @@
 #include <cstdint>
 #include <stdexcept>
 #include <chrono>
-#include <iomanip> // для std::setprecision
-#include <sstream> // для std::stringstream
+#include <iomanip> // for std::setprecision
+#include <sstream> // for std::stringstream
 #include <thread>
 #include <atomic>
 #include <mutex>
-#include <cmath> // для log2
-#include <numeric> // для std::iota
+#include <cmath> // for log2
+#include <numeric> // for std::iota
 
-// --- Утилиты ---
+// --- Utilities ---
 
-// Вспомогательная функция для форматирования времени в MM:SS
+// Helper function for formatting time in MM:SS
 std::string formatTime(long long seconds) {
     if (seconds < 0) return "--:--";
     long long minutes = seconds / 60;
@@ -28,7 +28,7 @@ std::string formatTime(long long seconds) {
     return buffer;
 }
 
-// Функция для отображения прогресс-бара
+// Function to display progress bar
 void printProgressBar(double percentage, const std::string& message, std::chrono::steady_clock::time_point start_time, const std::string& extra_info = "") {
     percentage = std::max(0.0, std::min(1.0, percentage));
     int val = static_cast<int>(percentage * 100);
@@ -60,7 +60,7 @@ void printProgressBar(double percentage, const std::string& message, std::chrono
     }
 }
 
-// Функция для преобразования 64-битного числа в k-mer строку
+// Function to convert 64-bit number to k-mer string
 std::string uint64ToKmer(uint64_t kmer_val, int k) {
     std::string kmer_str(k, ' ');
     uint64_t mask = 3;
@@ -77,7 +77,7 @@ std::string uint64ToKmer(uint64_t kmer_val, int k) {
 }
 
 
-// --- Основные структуры ---
+// --- Main structures ---
 
 struct ContigInfo {
     std::string name;
@@ -127,7 +127,7 @@ class LocusBedGeneratorDetailed {
 public:
     void generate(const std::string& input_binary_full, const std::string& input_fai, const std::string& output_bed, 
                   uint32_t min_kmer_tf, uint32_t locus_gap_threshold, uint32_t min_locus_kmer_count, 
-                  double intersection_overlap, double jaccard_threshold, unsigned int num_threads) {
+                  double intersection_overlap, double jaccard_threshold, uint32_t min_locus_length, unsigned int num_threads) {
         
         loadFaiIndex(input_fai);
         
@@ -135,7 +135,7 @@ public:
         readAllKmerData(input_binary_full, kmer_db, min_kmer_tf);
         
         if (kmer_db.empty()) {
-            std::cerr << "Нет k-меров для анализа после применения фильтра." << std::endl;
+            std::cerr << "No k-mers for analysis after applying filter." << std::endl;
             std::ofstream out(output_bed);
             out << "track name=\"DetailedLoci\" description=\"Merged loci with signature k-mer stats\"\n";
             return;
@@ -145,7 +145,7 @@ public:
 
         std::vector<MergedLocus> merged_loci = mergeLoci(all_primary_loci, kmer_db, intersection_overlap, jaccard_threshold);
         
-        writeBedFile(output_bed, merged_loci, kmer_db, locus_gap_threshold);
+        writeBedFile(output_bed, merged_loci, kmer_db, locus_gap_threshold, min_locus_length);
     }
 
 private:
@@ -154,9 +154,9 @@ private:
 
     void loadFaiIndex(const std::string& filename) {
         auto start_time = std::chrono::steady_clock::now();
-        printProgressBar(0.0, "Чтение .fai индекса", start_time);
+        printProgressBar(0.0, "Reading .fai index", start_time);
         std::ifstream file(filename);
-        if (!file) throw std::runtime_error("Невозможно открыть .fai файл индекса: " + filename);
+        if (!file) throw std::runtime_error("Cannot open .fai index file: " + filename);
         
         contig_map.clear();
         std::string line;
@@ -170,20 +170,20 @@ private:
             contig_map.push_back(info);
             current_offset += info.length;
         }
-        if (contig_map.empty()) throw std::runtime_error("Файл .fai индекса пуст или имеет неверный формат.");
-        printProgressBar(1.0, "Чтение .fai индекса", start_time);
+        if (contig_map.empty()) throw std::runtime_error(".fai index file is empty or has invalid format.");
+        printProgressBar(1.0, "Reading .fai index", start_time);
     }
 
     void readAllKmerData(const std::string& filename, std::vector<KmerRawData>& kmer_db, uint32_t min_kmer_tf) {
         auto start_time = std::chrono::steady_clock::now();
         std::ifstream in(filename, std::ios::binary);
-        if (!in) throw std::runtime_error("Невозможно открыть полный бинарный файл: " + filename);
+        if (!in) throw std::runtime_error("Cannot open full binary file: " + filename);
         
         uint64_t total_kmers_in_file;
         in.read(reinterpret_cast<char*>(&total_kmers_in_file), sizeof(total_kmers_in_file));
         if (!in || total_kmers_in_file == 0) return;
         
-        printProgressBar(0.0, "Чтение данных", start_time);
+        printProgressBar(0.0, "Reading data", start_time);
         for (uint64_t i = 0; i < total_kmers_in_file; ++i) {
             KmerRawData job;
             in.read(reinterpret_cast<char*>(&job.kmer_val), sizeof(job.kmer_val));
@@ -196,11 +196,11 @@ private:
             in.read(reinterpret_cast<char*>(&dist_size), sizeof(dist_size));
             job.distances.resize(dist_size);
             in.read(reinterpret_cast<char*>(job.distances.data()), dist_size * sizeof(uint64_t));
-            if (!in) throw std::runtime_error("Ошибка при чтении бинарного файла.");
+            if (!in) throw std::runtime_error("Error reading binary file.");
             kmer_db.push_back(std::move(job));
-            if (i % 500 == 0) printProgressBar(static_cast<double>(i + 1) / total_kmers_in_file, "Чтение данных", start_time);
+            if (i % 500 == 0) printProgressBar(static_cast<double>(i + 1) / total_kmers_in_file, "Reading data", start_time);
         }
-        printProgressBar(1.0, "Чтение данных", start_time);
+        printProgressBar(1.0, "Reading data", start_time);
     }
 
     void findLociWorker(const std::vector<KmerRawData>& jobs, std::vector<PrimaryLocus>& local_loci, std::atomic<size_t>& next_job_idx, uint32_t locus_gap_threshold, uint32_t min_locus_kmer_count) {
@@ -237,7 +237,7 @@ private:
 
     std::vector<PrimaryLocus> findPrimaryLociParallel(const std::vector<KmerRawData>& kmer_jobs, uint32_t locus_gap_threshold, uint32_t min_locus_kmer_count, unsigned int num_threads) {
         auto start_time = std::chrono::steady_clock::now();
-        std::string msg = "Поиск локусов (" + std::to_string(num_threads) + " п.)";
+        std::string msg = "Finding loci (" + std::to_string(num_threads) + " thr.)";
         std::vector<std::thread> threads;
         std::vector<std::vector<PrimaryLocus>> thread_local_loci(num_threads);
         std::atomic<size_t> next_job_idx{0};
@@ -294,12 +294,12 @@ private:
 
     std::vector<MergedLocus> mergeLoci(std::vector<PrimaryLocus>& primary_loci, const std::vector<KmerRawData>& kmer_db, double intersection_overlap, double jaccard_threshold) {
         auto start_time = std::chrono::steady_clock::now();
-        if (primary_loci.empty()) { printProgressBar(1.0, "Слияние локусов", start_time); return {}; }
+        if (primary_loci.empty()) { printProgressBar(1.0, "Merging loci", start_time); return {}; }
         
-        printProgressBar(0.0, "Слияние локусов", start_time, "[1/2 Сортировка]");
+        printProgressBar(0.0, "Merging loci", start_time, "[1/2 Sorting]");
         std::sort(primary_loci.begin(), primary_loci.end());
         
-        printProgressBar(0.5, "Слияние локусов", start_time, "[2/2 Слияние]");
+        printProgressBar(0.5, "Merging loci", start_time, "[2/2 Merging]");
         std::vector<MergedLocus> merged_loci;
         if (primary_loci.empty()) return merged_loci;
 
@@ -325,7 +325,7 @@ private:
                 double j = 0.0;
                 if (overlap_frac >= intersection_overlap) {
                     should_merge = true;
-                    j = 1.0; // Принудительное слияние
+                    j = 1.0; // Forced merge
                 } else {
                     std::unordered_set<size_t> next_set = {next_primary.kmer_db_index};
                     j = calculatePositionalJaccard(current_merged.contributing_kmer_indices, next_set, kmer_db, current_merged.start, current_merged.end, next_primary.start, next_primary.end);
@@ -346,25 +346,25 @@ private:
             }
 
             if (i % 10000 == 0) {
-                printProgressBar(0.5 + 0.5 * (static_cast<double>(i) / primary_loci.size()), "Слияние локусов", start_time, "[2/2 Слияние]");
+                printProgressBar(0.5 + 0.5 * (static_cast<double>(i) / primary_loci.size()), "Merging loci", start_time, "[2/2 Merging]");
             }
         }
-        printProgressBar(1.0, "Слияние локусов", start_time);
+        printProgressBar(1.0, "Merging loci", start_time);
         return merged_loci;
     }
 
 
-    void writeBedFile(const std::string& filename, std::vector<MergedLocus>& merged_loci, const std::vector<KmerRawData>& kmer_db, uint32_t locus_gap_threshold) {
+    void writeBedFile(const std::string& filename, std::vector<MergedLocus>& merged_loci, const std::vector<KmerRawData>& kmer_db, uint32_t locus_gap_threshold, uint32_t min_locus_length) {
         auto start_time = std::chrono::steady_clock::now();
         std::ofstream out(filename);
-        if (!out) throw std::runtime_error("Невозможно открыть BED файл для записи: " + filename);
+        if (!out) throw std::runtime_error("Cannot open BED file for writing: " + filename);
         
         out << "track name=\"DetailedLoci\" description=\"Merged loci with signature k-mer stats\"\n";
-        if (merged_loci.empty()) { printProgressBar(1.0, "Запись BED файла", start_time); return; }
+        if (merged_loci.empty()) { printProgressBar(1.0, "Writing BED file", start_time); return; }
 
         std::vector<BedRecord> bed_records;
         
-        printProgressBar(0.0, "Подготовка к записи", start_time);
+        printProgressBar(0.0, "Preparing to write", start_time);
         for (size_t i = 0; i < merged_loci.size(); ++i) {
             auto& locus = merged_loci[i];
             
@@ -413,16 +413,6 @@ private:
                 sig_max_locus_size = std::max(sig_max_locus_size, current_locus_size);
             }
 
-            double j_min = 0, j_median = 0, j_max = 0;
-            if (locus.contributing_kmer_indices.size() <= 1) {
-                j_min = j_median = j_max = 1.0;
-            } else if(!locus.jaccard_values.empty()){
-                std::sort(locus.jaccard_values.begin(), locus.jaccard_values.end());
-                j_min = locus.jaccard_values.front();
-                j_max = locus.jaccard_values.back();
-                j_median = locus.jaccard_values[locus.jaccard_values.size()/2];
-            }
-
             size_t contig_idx = findContigIndex(locus.start);
             const auto& contig = contig_map[contig_idx];
             uint64_t local_start = locus.start - contig.global_offset;
@@ -437,24 +427,25 @@ private:
                     << "entropy=" << std::fixed << std::setprecision(2) << entropy << ";"
                     << "locus_count=" << sig_locus_count << ";"
                     << "max_locus_size=" << sig_max_locus_size << ";"
-                    << "unique_kmers=" << locus.contributing_kmer_indices.size() << ";"
-                    << "jaccard_min=" << std::fixed << std::setprecision(2) << j_min << ";"
-                    << "jaccard_median=" << std::fixed << std::setprecision(2) << j_median << ";"
-                    << "jaccard_max=" << std::fixed << std::setprecision(2) << j_max;
+                    << "unique_kmers=" << locus.contributing_kmer_indices.size();
 
-            bed_records.push_back({contig.name, local_start, local_end, name_ss.str(), (local_end - local_start)});
+            // Filter by minimum locus length
+            uint64_t locus_length = local_end - local_start;
+            if (locus_length >= min_locus_length) {
+                bed_records.push_back({contig.name, local_start, local_end, name_ss.str(), locus_length});
+            }
         }
         
-        printProgressBar(0.5, "Сортировка BED", start_time);
+        printProgressBar(0.5, "Sorting BED", start_time);
         std::sort(bed_records.begin(), bed_records.end());
 
-        printProgressBar(0.75, "Запись BED файла", start_time);
+        printProgressBar(0.75, "Writing BED file", start_time);
         for (size_t i = 0; i < bed_records.size(); ++i) {
             const auto& rec = bed_records[i];
             out << rec.chrom << "\t" << rec.start << "\t" << rec.end << "\t"
                 << rec.name << "\t" << rec.score << "\t" << rec.strand << "\n";
         }
-        printProgressBar(1.0, "Запись BED файла", start_time);
+        printProgressBar(1.0, "Writing BED file", start_time);
     }
 
     size_t findContigIndex(uint64_t global_pos) const {
@@ -466,14 +457,15 @@ private:
 };
 
 int main(int argc, char* argv[]) {
-    if (argc < 4 || argc > 10) {
-        std::cerr << "Использование: " << argv[0] << " <input.bin> <input.fai> <output.bed> [min_tf] [locus_gap] [min_locus_kmers] [inter_overlap] [jaccard_thresh] [threads]" << std::endl;
-        std::cerr << "  [min_kmer_tf]       - необязательный. Мин. частота k-мера (по умолч.: 100)." << std::endl;
-        std::cerr << "  [locus_gap]         - необязательный. Макс. разрыв внутри локуса (по умолч.: 10000)." << std::endl;
-        std::cerr << "  [min_locus_kmers]   - необязательный. Мин. число k-меров в локусе (по умолч.: 2)." << std::endl;
-        std::cerr << "  [inter_overlap]     - необязательный. Порог сильного перекрытия для слияния (по умолч.: 0.9)." << std::endl;
-        std::cerr << "  [jaccard_thresh]    - необязательный. Порог индекса Жаккара для слияния (по умолч.: 0.5)." << std::endl;
-        std::cerr << "  [threads]           - необязательный. Количество потоков (по умолч.: все доступные)." << std::endl;
+    if (argc < 4 || argc > 11) {
+        std::cerr << "Usage: " << argv[0] << " <input.bin> <input.fai> <output.bed> [min_tf] [locus_gap] [min_locus_kmers] [inter_overlap] [jaccard_thresh] [min_length] [threads]" << std::endl;
+        std::cerr << "  [min_kmer_tf]       - optional. Min. k-mer frequency (default: 100)." << std::endl;
+        std::cerr << "  [locus_gap]         - optional. Max. gap within locus (default: 10000)." << std::endl;
+        std::cerr << "  [min_locus_kmers]   - optional. Min. number of k-mers in locus (default: 2)." << std::endl;
+        std::cerr << "  [inter_overlap]     - optional. Strong overlap threshold for merging (default: 0.9)." << std::endl;
+        std::cerr << "  [jaccard_thresh]    - optional. Jaccard index threshold for merging (default: 0.5)." << std::endl;
+        std::cerr << "  [min_length]        - optional. Min. locus length for output (default: 100)." << std::endl;
+        std::cerr << "  [threads]           - optional. Number of threads (default: all available)." << std::endl;
         return 1;
     }
 
@@ -485,26 +477,28 @@ int main(int argc, char* argv[]) {
     uint32_t min_locus_kmer_count = 2;
     double intersection_overlap = 0.9;
     double jaccard_threshold = 0.5;
+    uint32_t min_locus_length = 100;
     unsigned int num_threads = std::thread::hardware_concurrency();
 
-    if (argc >= 5) { try { min_kmer_tf = std::stoul(argv[4]); } catch (...) { std::cerr << "Ошибка: неверное значение для min_kmer_tf." << std::endl; return 1; } }
-    if (argc >= 6) { try { locus_gap_threshold = std::stoul(argv[5]); } catch (...) { std::cerr << "Ошибка: неверное значение для locus_gap_threshold." << std::endl; return 1; } }
-    if (argc >= 7) { try { min_locus_kmer_count = std::stoul(argv[6]); } catch (...) { std::cerr << "Ошибка: неверное значение для min_locus_kmers." << std::endl; return 1; } }
-    if (argc >= 8) { try { intersection_overlap = std::stod(argv[7]); } catch (...) { std::cerr << "Ошибка: неверное значение для intersection_overlap." << std::endl; return 1; } }
-    if (argc >= 9) { try { jaccard_threshold = std::stod(argv[8]); } catch (...) { std::cerr << "Ошибка: неверное значение для jaccard_threshold." << std::endl; return 1; } }
-    if (argc >= 10) {
+    if (argc >= 5) { try { min_kmer_tf = std::stoul(argv[4]); } catch (...) { std::cerr << "Error: invalid value for min_kmer_tf." << std::endl; return 1; } }
+    if (argc >= 6) { try { locus_gap_threshold = std::stoul(argv[5]); } catch (...) { std::cerr << "Error: invalid value for locus_gap_threshold." << std::endl; return 1; } }
+    if (argc >= 7) { try { min_locus_kmer_count = std::stoul(argv[6]); } catch (...) { std::cerr << "Error: invalid value for min_locus_kmers." << std::endl; return 1; } }
+    if (argc >= 8) { try { intersection_overlap = std::stod(argv[7]); } catch (...) { std::cerr << "Error: invalid value for intersection_overlap." << std::endl; return 1; } }
+    if (argc >= 9) { try { jaccard_threshold = std::stod(argv[8]); } catch (...) { std::cerr << "Error: invalid value for jaccard_threshold." << std::endl; return 1; } }
+    if (argc >= 10) { try { min_locus_length = std::stoul(argv[9]); } catch (...) { std::cerr << "Error: invalid value for min_locus_length." << std::endl; return 1; } }
+    if (argc >= 11) {
         try {
-            num_threads = std::stoul(argv[9]);
+            num_threads = std::stoul(argv[10]);
             if (num_threads == 0) num_threads = 1;
-        } catch (...) { std::cerr << "Ошибка: неверное значение для num_threads." << std::endl; return 1; }
+        } catch (...) { std::cerr << "Error: invalid value for num_threads." << std::endl; return 1; }
     }
     
     try {
         LocusBedGeneratorDetailed merger;
-        merger.generate(input_file, fai_file, output_file, min_kmer_tf, locus_gap_threshold, min_locus_kmer_count, intersection_overlap, jaccard_threshold, num_threads);
-        std::cout << "\nСоздание аннотированного BED файла успешно завершено." << std::endl;
+        merger.generate(input_file, fai_file, output_file, min_kmer_tf, locus_gap_threshold, min_locus_kmer_count, intersection_overlap, jaccard_threshold, min_locus_length, num_threads);
+        std::cout << "\nAnnotated BED file creation completed successfully." << std::endl;
     } catch (const std::exception& e) {
-        std::cerr << "\nОшибка: " << e.what() << std::endl;
+        std::cerr << "\nError: " << e.what() << std::endl;
         return 1;
     }
 
